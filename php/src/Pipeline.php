@@ -31,46 +31,47 @@ final class Pipeline
         $this->log = $log;
     }
 
+    private function projectTestPass(Project $project) :bool {
+        if (!$project->hasTests()) {
+            $this->log->info('No tests');
+            return true;
+        }
+        if (!$project->runTestsResult()) {
+            $this->log->error('Tests failed');
+            return false;
+        }
+        $this->log->info('Tests passed');
+        return true;
+    }
+
+    private function projectDeployedSuccessfully(Project $project) :bool { 
+        if(!$project->deploysSuccessfully()) {
+            $this->log->error('Deployment failed');
+            return false;
+        }
+        $this->log->info('Deployment successful');
+        return true;
+    }
+
+    private function sendEmailNotification(string $message) :void {
+        if (!$this->config->sendEmailSummary()) {
+            $this->log->info('Email disabled');
+            return;
+        }
+        $this->log->info('Sending email');
+        $this->emailer->send($message);
+    }
+
     public function run(Project $project): void
     {
-        if ($project->hasTests()) {
-            if ($project->runTests() === 'success') {
-                $this->log->info('Tests passed');
-                $testsPassed = true;
-            } else {
-                $this->log->error('Tests failed');
-                $testsPassed = false;
-            }
-        } else {
-            $this->log->info('No tests');
-            $testsPassed = true;
+        if(!$this->projectTestPass($project)) {
+            $this->sendEmailNotification('Tests failed');
+            return;
         }
-
-        if ($testsPassed) {
-            if ($project->deploy() === 'success') {
-                $this->log->info('Deployment successful');
-                $deploySuccessful = true;
-            } else {
-                $this->log->error('Deployment failed');
-                $deploySuccessful = false;
-            }
-        } else {
-            $deploySuccessful = false;
+        if(!$this->projectDeployedSuccessfully($project)) {
+            $this->sendEmailNotification('Deployment failed');
+            return;
         }
-
-        if ($this->config->sendEmailSummary()) {
-            $this->log->info('Sending email');
-            if ($testsPassed) {
-                if ($deploySuccessful) {
-                    $this->emailer->send('Deployment completed successfully');
-                } else {
-                    $this->emailer->send('Deployment failed');
-                }
-            } else {
-                $this->emailer->send('Tests failed');
-            }
-        } else {
-            $this->log->info('Email disabled');
-        }
+        $this->sendEmailNotification('Deployment completed successfully');
     }
 }
